@@ -4,7 +4,7 @@ interface DesignData {
     overview: string;
     points: string[];
     diagram: string;
-    metrics: Record<string, string>;
+    metrics?: Record<string, string>;
 }
 
 interface ScaffPrompt {
