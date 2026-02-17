@@ -1,0 +1,87 @@
+
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { NextResponse } from "next/server";
+
+// Define the response schema explicitly to ensure type safety in the prompt
+const SYSTEM_DESIGN_SCHEMA = `
+{
+  "eli5": {
+    "narrative": "A creative, simple analogy explaining the system...",
+    "diagram": "Mermaid graph TD...",
+    "metrics": { "difficulty": "Very Easy", "time": "Instant" }
+  },
+  "intermediate": {
+    "narrative": "Technical explanation of core flows and architecture...",
+    "diagram": "Mermaid graph TD...",
+    "metrics": { "complexity": "Medium", "load": "High" }
+  },
+  "senior": {
+    "narrative": "Deep dive into scalability, trade-offs, and specific technologies...",
+    "diagram": "Mermaid graph TD...",
+    "metrics": { "qps": "High", "consistency": "Eventual" }
+  }
+}
+`;
+
+export async function POST(req: Request) {
+  try {
+    const { url } = await req.json();
+
+    if (!url) {
+      return NextResponse.json({ error: "URL is required" }, { status: 400 });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return NextResponse.json(
+        {
+          error: "API Key Configured Incorrectly",
+          details: "Please add GEMINI_API_KEY to your .env.local file."
+        },
+        { status: 500 }
+      );
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+    const prompt = `
+      You are a Senior Principal System Architect.
+      Analyze the following website/service: "${url}".
+      
+      Generate a complete System Design Blueprint in strict JSON format.
+      It must match the following schema exactly:
+      ${SYSTEM_DESIGN_SCHEMA}
+
+      CRITICAL:
+      1. Return ONLY the JSON. No markdown formatting, no backticks.
+      2. The 'diagram' fields MUST be valid Mermaid.js code (graph TD).
+      3. **Mermaid Safety**:
+         - ALWAYS quote node labels that contain spaces or special characters.
+         - Example: Node["Complex Label (With Text)"] INSTEAD OF Node[Complex Label(With Text)].
+         - Do NOT use parentheses inside node shapes unless the text is quoted.
+      4. Be specific to the domain of "${url}".
+      5. For 'eli5', use a creative, real-world analogy (e.g., 'A library', 'A pizza shop').
+    `;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    // Clean up potential markdown formatting from LLM
+    const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+
+    try {
+      const data = JSON.parse(cleanJson);
+      return NextResponse.json(data);
+    } catch (e) {
+      console.error("JSON Parse Error:", e, cleanJson);
+      return NextResponse.json({ error: "Failed to parse AI response" }, { status: 500 });
+    }
+
+  } catch (error) {
+    console.error("Analysis Error:", error);
+    return NextResponse.json({ error: "Analysis failed" }, { status: 500 });
+  }
+}
