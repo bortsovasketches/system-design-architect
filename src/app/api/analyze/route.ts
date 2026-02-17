@@ -1,6 +1,21 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { LRUCache } from "lru-cache";
+
+// --- Rate Limiting Setup ---
+// Allow 5 requests per minute per IP
+const rateLimit = new LRUCache<string, number>({
+  max: 500,
+  ttl: 60 * 1000,
+  allowStale: false,
+});
+
+// --- Input Validation Schema ---
+const AnalyzeRequestSchema = z.object({
+  url: z.string().trim().url({ message: "Invalid URL format" }).max(200, { message: "URL too long" }),
+});
 
 // Define the response schema explicitly to ensure type safety in the prompt
 const SYSTEM_DESIGN_SCHEMA = `
@@ -25,11 +40,30 @@ const SYSTEM_DESIGN_SCHEMA = `
 
 export async function POST(req: Request) {
   try {
-    const { url } = await req.json();
+    // 1. Rate Limiting Check
+    const ip = req.headers.get("x-forwarded-for") || "unknown";
+    const currentUsage = rateLimit.get(ip) || 0;
 
-    if (!url) {
-      return NextResponse.json({ error: "URL is required" }, { status: 400 });
+    if (currentUsage >= 5) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Please try again in a minute." },
+        { status: 429 }
+      );
     }
+    rateLimit.set(ip, currentUsage + 1);
+
+    // 2. Input Validation
+    const body = await req.json();
+    const validation = AnalyzeRequestSchema.safeParse(body);
+
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: "Invalid Input", details: validation.error.issues[0].message },
+        { status: 400 }
+      );
+    }
+
+    const { url } = validation.data;
 
     const apiKey = process.env.GEMINI_API_KEY;
 
