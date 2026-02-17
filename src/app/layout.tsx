@@ -16,7 +16,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.variable}>{children}</body>
+      <body className={inter.variable}>
+        <div className="w-full bg-indigo-500/10 border-b border-indigo-500/20 text-indigo-300 text-xs font-medium text-center py-2 backdrop-blur-md relative z-50">
+          This is an AI experiment. It can make mistakes.
+        </div>
+        {children}
+      </body>
     </html>
   )
 }
